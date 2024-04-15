@@ -2,6 +2,7 @@
 
 <#activation du Hyper-V sur le machine en cas de deja installe#>
 enabled-WindowsOptionalFeature -Online -FeatureName Microsoft-hyper-v-all
+Disable-WindowsOptionalFeature  -Online -FeatureName Microsoft-hyper-v-all
 New-VMSwitch -name Externe -NetAdapterName WI-FI
 
 <#Creation de une nouvelle machine virtuelle#>
@@ -219,5 +220,27 @@ Add-IscsiVirtualDiskTargetMapping -TargetName target-01 -Path 'd:\Iscsivirtualdi
 Add-IscsiVirtualDiskTargetMapping -TargetName target-01 -Path 'd:\Iscsivirtualdisk\Disk3.vhdx'
 Add-IscsiVirtualDiskTargetMapping -TargetName target-01 -Path 'd:\Iscsivirtualdisk\Disk4.vhdx'
 
+<#Creation de cluster#>
+<#installer role remotement#>
+$credential = Get-Credential form-it\admin
+Invoke-Command -VMName Hote-01, Hote-02 -ScriptBlock {Install-WindowsFeature Multipath-io -includeAllSubFeature -includeManagementTools} -Credential $credential
 
+<##>
+Stop-VM -VMName Hote-01, hote-02
+Set-VMProcessor -ExposeVirtualizationExtensions:$true -VMName Hote-01, hote-02
+Get-VMNetworkAdapter -VMName Hote-01, Hote-02 | Set-VMNetworkAdapter -MacAddressSpoofing on
+Start-VM -VMName Hote-01, hote-02
 
+Invoke-Command -VMName Hote-01, Hote-02 -ScriptBlock {Get-Service MSISCSI | Start-Service; Set-Service -Name MSISCSI -StartupType Automatic } -Credential $credential
+Invoke-Command -VMName Hote-02 -ScriptBlock {Enable-Msdsmautomaticclaim -BusType iscsi; Enable-Msdsmautomaticclaim -BusType sas } -Credential $credential
+
+<#installer hyper-v sur les vms#>
+Invoke-Command -VMName Hote-01, Hote-02 -ScriptBlock {Install-WindowsFeature Hyper-v -includeAllSubFeature -includeManagementTools -restart} -Credential $credential
+
+Invoke-Command -VMName Hote-01,Hote-02 -ScriptBlock { install-windowsfeature -Name Failover-Clustering -IncludeAllSubFeature -IncludeManagementTools  } -credential $cred
+
+<#Teste Clusters#>
+Test-Cluster -Node 10.144.0.10, 10.144.0.20
+
+<#Creer Switch sur les Vm 1 et 2 #>
+Invoke-Command -VMName Hote-01,Hote-02 -ScriptBlock { New-VmSwitch -name Externe -NetAdapterName Interne} -credential $credential
